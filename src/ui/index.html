@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ai-registry</title>
+  <style>
+    body { font: 14px -apple-system, system-ui, sans-serif; padding: 20px; max-width: 1100px; margin: auto; }
+    h1 { font-size: 18px; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px 12px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
+    th { font-weight: 600; background: #fafafa; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    .badge.registered { background: #d4edda; color: #155724; }
+    .badge.stale { background: #fff3cd; color: #856404; }
+    .badge.expected_unregistered { background: #f8d7da; color: #721c24; }
+    .meta { color: #666; font-size: 12px; }
+    .url { font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+  <h1>ai-registry — service catalog</h1>
+  <div class="meta">Auto-refreshing every 5s. Read-only.</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th><th>Type</th><th>State</th><th>URL</th><th>Version</th>
+        <th>Last heartbeat</th><th>Metadata</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <script>
+  function relTime(iso) {
+    if (!iso) return "—";
+    const ageSec = (new Date() - new Date(iso)) / 1000;
+    if (ageSec < 60) return Math.round(ageSec) + "s ago";
+    if (ageSec < 3600) return Math.round(ageSec / 60) + "m ago";
+    return Math.round(ageSec / 3600) + "h ago";
+  }
+  async function load() {
+    const r = await fetch("/api/services");
+    const body = await r.json();
+    const rows = body.services || [];
+    document.getElementById("rows").innerHTML = rows.map(s => `
+      <tr>
+        <td><strong>${s.name}</strong></td>
+        <td>${s.type}</td>
+        <td><span class="badge ${s.state}">${s.state}</span></td>
+        <td class="url">${s.url || s.expected_url || "—"}</td>
+        <td>${s.version || "—"}</td>
+        <td>${relTime(s.last_heartbeat_at)}</td>
+        <td class="meta"><code>${JSON.stringify(s.metadata || {})}</code></td>
+      </tr>
+    `).join("");
+  }
+  load();
+  setInterval(load, 5000);
+  </script>
+</body>
+</html>
