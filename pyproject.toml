@@ -1,0 +1,17 @@
+[project]
+name = "ai-registry"
+version = "0.5.0"
+description = "Enterprise AI Platform — service registry (catalog + health + discovery)"
+requires-python = ">=3.11"
+dependencies = [
+    "enterprise-ai-platform-sdk[fastapi,registry-server] @ git+ssh://git@github.com/narisun/ai-platform-sdk.git@v0.5.0",
+    "uvicorn[standard]>=0.30.0,<1.0.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "unit: fast unit tests (no I/O, no Docker)",
+    "component: multi-class tests with faked external systems",
+    "integration: docker-compose stack required",
+]
