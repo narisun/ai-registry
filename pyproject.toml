@@ -1,6 +1,6 @@
 [project]
 name = "ai-registry"
-version = "0.6.0"
+version = "0.6.2"
 description = "Enterprise AI Platform — service registry (catalog + health + discovery)"
 requires-python = ">=3.11"
 dependencies = [

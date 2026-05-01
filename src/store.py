@@ -21,11 +21,16 @@ CREATE TABLE IF NOT EXISTS services (
     metadata_json     TEXT,
     last_heartbeat_at TEXT,
     registered_at     TEXT,
-    last_changed_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    last_changed_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    environment       TEXT NOT NULL DEFAULT 'dev'
 );
 CREATE INDEX IF NOT EXISTS idx_services_state ON services (state);
 CREATE INDEX IF NOT EXISTS idx_services_type  ON services (type);
 """
+
+_MIGRATE_ADD_ENVIRONMENT = (
+    "ALTER TABLE services ADD COLUMN environment TEXT NOT NULL DEFAULT 'dev'"
+)
 
 
 def _now() -> str:
@@ -50,6 +55,11 @@ class SqliteStore:
         async with self._conn() as db:
             db.row_factory = aiosqlite.Row
             await db.executescript(_DDL)
+            # Non-destructive migration: add environment column to existing databases.
+            try:
+                await db.execute(_MIGRATE_ADD_ENVIRONMENT)
+            except Exception:
+                pass  # Column already exists (OperationalError) — safe to ignore.
             await db.commit()
 
     async def apply_seed(self, seed: Iterable[SeededEntry]) -> None:
@@ -68,7 +78,8 @@ class SqliteStore:
             await db.commit()
 
     async def register(self, name: str, *, url: str, type_: str,
-                       version: str | None, metadata: dict | None = None) -> None:
+                       version: str | None, metadata: dict | None = None,
+                       environment: str = "dev") -> None:
         now = _now()
         meta_json = json.dumps(metadata or {})
         async with self._conn() as db:
@@ -77,8 +88,8 @@ class SqliteStore:
                 """
                 INSERT INTO services (
                     name, url, type, state, version, metadata_json,
-                    registered_at, last_heartbeat_at, last_changed_at
-                ) VALUES (?, ?, ?, 'registered', ?, ?, ?, ?, ?)
+                    registered_at, last_heartbeat_at, last_changed_at, environment
+                ) VALUES (?, ?, ?, 'registered', ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(name) DO UPDATE SET
                     url=excluded.url,
                     type=excluded.type,
@@ -87,9 +98,10 @@ class SqliteStore:
                     metadata_json=excluded.metadata_json,
                     registered_at=COALESCE(services.registered_at, ?),
                     last_heartbeat_at=?,
-                    last_changed_at=?
+                    last_changed_at=?,
+                    environment=excluded.environment
                 """,
-                (name, url, type_, version, meta_json, now, now, now, now, now, now),
+                (name, url, type_, version, meta_json, now, now, now, environment, now, now, now),
             )
             await db.commit()
 
@@ -148,6 +160,28 @@ class SqliteStore:
             cur = await db.execute("SELECT * FROM services ORDER BY name")
             rows = await cur.fetchall()
             return [_row_to_dict(r) for r in rows]
+
+    async def list_by_env(self, environment: str) -> list[dict]:
+        """Return only entries whose environment matches the given value."""
+        async with self._conn() as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                "SELECT * FROM services WHERE environment=? ORDER BY name",
+                (environment,),
+            )
+            rows = await cur.fetchall()
+            return [_row_to_dict(r) for r in rows]
+
+    async def get_in_env(self, name: str, environment: str) -> dict | None:
+        """Return the named entry only if it belongs to the given environment."""
+        async with self._conn() as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                "SELECT * FROM services WHERE name=? AND environment=?",
+                (name, environment),
+            )
+            row = await cur.fetchone()
+            return _row_to_dict(row) if row else None
 
     async def find_stale_candidates(self, *, older_than_iso: str) -> list[str]:
         async with self._conn() as db:
