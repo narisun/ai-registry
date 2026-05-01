@@ -110,3 +110,37 @@ async def test_reaper_query_helpers(tmp_path):
     cutoff = (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat()
     candidates = await store.find_stale_candidates(older_than_iso=cutoff)
     assert "x" in candidates
+
+
+@pytest.mark.asyncio
+async def test_find_eviction_candidates_returns_stale_only(tmp_path):
+    """Verify find_eviction_candidates structurally mirrors find_stale_candidates
+    but filters on state='stale'. Catches the typo case (e.g., 'staled', 'STALE')."""
+    from src.store import SqliteStore
+    store = SqliteStore(tmp_path / "r.db")
+    await store.init_schema()
+    await store.register("a", url="http://a", type_="mcp", version=None)
+    await store.register("b", url="http://b", type_="mcp", version=None)
+    await store.mark_stale("b")
+    # Backdate both heartbeats far enough that both would qualify if state weren't checked
+    import aiosqlite
+    async with aiosqlite.connect(tmp_path / "r.db") as db:
+        old = (datetime.now(timezone.utc) - timedelta(seconds=600)).isoformat()
+        await db.execute("UPDATE services SET last_heartbeat_at=?", (old,))
+        await db.commit()
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=300)).isoformat()
+    candidates = await store.find_eviction_candidates(older_than_iso=cutoff)
+    assert candidates == ["b"]   # ONLY 'b' is stale; 'a' is registered
+
+
+@pytest.mark.asyncio
+async def test_revival_flow(tmp_path):
+    """register → mark_stale → heartbeat → state returns to 'registered'."""
+    from src.store import SqliteStore
+    store = SqliteStore(tmp_path / "r.db")
+    await store.init_schema()
+    await store.register("x", url="http://x", type_="mcp", version=None)
+    await store.mark_stale("x")
+    assert (await store.get("x"))["state"] == "stale"
+    assert (await store.heartbeat("x")) is True
+    assert (await store.get("x"))["state"] == "registered"
