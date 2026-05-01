@@ -38,8 +38,7 @@ class RegistryApp(BaseAgentApp):
     requires_checkpointer = False
     requires_conversation_store = False
 
-    def load_config(self, name: str | None = None):
-        return RegistryConfig.from_env()
+    config_model = RegistryConfig
 
     def routes(self):
         # Order: UI router last so /api/* take precedence (defensive — FastAPI matches
@@ -61,6 +60,7 @@ class RegistryApp(BaseAgentApp):
 
         app.state.store = deps.store
         app.state.api_key = deps.config.internal_api_key
+        app.state.environment = deps.config.environment
         app.state.reaper_task = asyncio.create_task(reaper_loop(deps.store, deps.config))
 
     async def on_shutdown(self, deps: RegistryDeps):
@@ -82,5 +82,25 @@ class RegistryApp(BaseAgentApp):
         return app
 
 
-_registry = RegistryApp()
-app = _registry.create_app()
+import os as _os
+
+def _make_app():
+    """Create the WSGI app, loading config from the environment.
+
+    Deferred to a function so that test code that imports *only* RegistryApp
+    (and supplies an explicit config=) is not forced to have ENVIRONMENT set
+    at import time.
+    """
+    _r = RegistryApp()
+    return _r.create_app()
+
+
+# Only auto-construct when the module is loaded as the uvicorn entry-point
+# (i.e. ENVIRONMENT is already set in the process).  Tests that want the full
+# app can call _make_app() with the required env vars in place.
+if _os.environ.get("ENVIRONMENT"):
+    _registry = RegistryApp()
+    app = _registry.create_app()
+else:
+    # Stub — replaced by test fixtures or uvicorn once ENVIRONMENT is set.
+    app = None  # type: ignore[assignment]

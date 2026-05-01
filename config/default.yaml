@@ -1,0 +1,13 @@
+# config/default.yaml — registry server, base settings.
+environment: dev
+port: 8090
+sqlite_path: /var/lib/registry/registry.db
+seed_path: /etc/registry/registry.yaml
+internal_api_key: ${INTERNAL_API_KEY}
+heartbeat_grace_seconds: 60
+eviction_seconds: 300
+reaper_interval_seconds: 30
+service_url: ""
+registry_url: ""
+service_version: "0.6.0"
+enable_ui: true

@@ -19,5 +19,16 @@ jobs:
           pip install -r /tmp/requirements-ci.txt
           pip install -r requirements-runtime.txt
           pip install pytest pytest-asyncio
+      - name: check-env-example
+        run: platform-sdk check-env-example --config-dir config --env-example .env.example
+
+      - name: no-adhoc-httpx-async-client
+        run: |
+          if grep -rn --include='*.py' 'httpx\.AsyncClient(' src/; then
+            echo "ERROR: direct httpx.AsyncClient construction found in src/."
+            echo "Use platform_sdk.http.make_internal_http_client instead."
+            exit 1
+          fi
+
       - name: Run tests
         run: pytest tests -v

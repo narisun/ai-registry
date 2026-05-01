@@ -30,6 +30,7 @@ async def test_reaper_one_pass_marks_stale_then_evicts(tmp_path):
         await db.commit()
 
     config = RegistryConfig(
+        environment="dev",
         port=8090, sqlite_path=tmp_path / "r.db", internal_api_key="k",
         heartbeat_grace_seconds=60, eviction_seconds=300, reaper_interval_seconds=30,
     )
