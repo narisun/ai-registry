@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.2 — 2026-05-01
+
+### NEW
+
+- Per-entry `environment` stamping on `RegistryEntry`. Captured from
+  the `X-Environment` header at registration time and persisted as a
+  column on the `services` table. Lookups that include `X-Environment`
+  filter results to matching entries (defense-in-depth: cross-env
+  enumeration is no longer possible). Unauthenticated reads without
+  the header still return everything.
+
 ## 0.5.1 — 2026-05-01
 
 ### Fixed

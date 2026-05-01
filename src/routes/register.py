@@ -13,9 +13,11 @@ register_router = APIRouter()
 @register_router.post("/api/services", dependencies=[Depends(require_api_key)])
 async def register(request: Request, body: RegistrationRequest):
     store = request.app.state.store
+    client_env = request.headers.get("X-Environment", "")
     await store.register(
         body.name, url=str(body.url), type_=body.type,
         version=body.version, metadata=body.metadata,
+        environment=client_env,
     )
     row = await store.get(body.name)
     return row
