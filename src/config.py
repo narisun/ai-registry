@@ -1,56 +1,64 @@
-"""RegistryConfig — typed config with fail-fast validation."""
+"""Registry server configuration (Pydantic v2)."""
 from __future__ import annotations
 
-import os
-from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Annotated
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from platform_sdk.config.env_isolation import Environment
 
 
-@dataclass
-class RegistryConfig:
-    port: int = 8090
-    sqlite_path: Path = field(default_factory=lambda: Path("/var/lib/registry/registry.db"))
+class RegistryConfig(BaseModel):
+    """Configuration for the registry server."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    environment: Environment
+
+    # Server runtime
+    port: Annotated[int, Field(gt=0, le=65535)] = 8090
+
+    # Storage
+    sqlite_path: Path = Path("/var/lib/registry/registry.db")
     seed_path: Path | None = None
-    internal_api_key: str = ""
-    heartbeat_grace_seconds: int = 60
+
+    # Auth
+    internal_api_key: str
+
+    # Reaper
+    heartbeat_grace_seconds: Annotated[int, Field(ge=0)] = 60
     eviction_seconds: int = 300
-    reaper_interval_seconds: int = 30
+    reaper_interval_seconds: Annotated[int, Field(gt=0)] = 30
+
+    # Self-URL (rarely used; registry usually doesn't register itself)
     service_url: str = ""
+    registry_url: str = ""
+    service_version: str = ""
+
+    # UI
     enable_ui: bool = True
 
-    def __post_init__(self) -> None:
-        errors: list[str] = []
-        if self.port <= 0 or self.port > 65535:
-            errors.append(f"port={self.port} must be in 1..65535")
-        if not self.internal_api_key:
-            errors.append("internal_api_key must not be empty (set INTERNAL_API_KEY env)")
-        if self.heartbeat_grace_seconds < 0:
-            errors.append(f"heartbeat_grace_seconds={self.heartbeat_grace_seconds} cannot be negative")
-        if self.eviction_seconds < self.heartbeat_grace_seconds:
-            errors.append(
-                f"eviction_seconds={self.eviction_seconds} must be >= "
-                f"heartbeat_grace_seconds={self.heartbeat_grace_seconds}"
+    @field_validator("internal_api_key")
+    @classmethod
+    def _require_api_key(cls, v: str) -> str:
+        if not v:
+            raise ValueError(
+                "internal_api_key must not be empty (set INTERNAL_API_KEY env)"
             )
-        if self.reaper_interval_seconds <= 0:
-            errors.append(f"reaper_interval_seconds={self.reaper_interval_seconds} must be positive")
-        if isinstance(self.sqlite_path, str):
-            self.sqlite_path = Path(self.sqlite_path)
-        if self.seed_path is not None and isinstance(self.seed_path, str):
-            self.seed_path = Path(self.seed_path)
-        if errors:
-            raise ValueError(f"RegistryConfig validation failed: {'; '.join(errors)}")
+        return v
+
+    @field_validator("eviction_seconds")
+    @classmethod
+    def _validate_eviction_vs_grace(cls, v, info):
+        grace = info.data.get("heartbeat_grace_seconds", 0)
+        if v < grace:
+            raise ValueError(
+                f"eviction_seconds={v} must be >= heartbeat_grace_seconds={grace}"
+            )
+        return v
 
     @classmethod
-    def from_env(cls) -> "RegistryConfig":
-        seed = os.environ.get("SEED_PATH", "")
-        return cls(
-            port=int(os.environ.get("REGISTRY_PORT", "8090")),
-            sqlite_path=Path(os.environ.get("SQLITE_PATH", "/var/lib/registry/registry.db")),
-            seed_path=Path(seed) if seed else None,
-            internal_api_key=os.environ.get("INTERNAL_API_KEY", ""),
-            heartbeat_grace_seconds=int(os.environ.get("HEARTBEAT_GRACE_SECONDS", "60")),
-            eviction_seconds=int(os.environ.get("EVICTION_SECONDS", "300")),
-            reaper_interval_seconds=int(os.environ.get("REAPER_INTERVAL_SECONDS", "30")),
-            service_url=os.environ.get("SERVICE_URL", ""),
-            enable_ui=os.environ.get("ENABLE_UI", "true").lower() != "false",
-        )
+    def load(cls, *, config_dir: str | None = None, env: str | None = None) -> "RegistryConfig":
+        from platform_sdk.config.loader import load_config
+        return load_config(cls, config_dir=config_dir, env=env)

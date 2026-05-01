@@ -1,7 +1,6 @@
 """Component-level smoke test — full RegistryApp lifecycle in-process."""
 from __future__ import annotations
 
-import os
 import pytest
 from fastapi.testclient import TestClient
 
@@ -9,23 +8,23 @@ pytestmark = pytest.mark.component
 
 
 @pytest.fixture
-def app(tmp_path, monkeypatch):
-    monkeypatch.setenv("INTERNAL_API_KEY", "test-key")
-    monkeypatch.setenv("SQLITE_PATH", str(tmp_path / "r.db"))
-    monkeypatch.setenv("REGISTRY_PORT", "8090")
-    monkeypatch.delenv("REGISTRY_URL", raising=False)  # prevent self-registration loop
-    monkeypatch.delenv("SEED_PATH", raising=False)
+def app(tmp_path):
+    from src.config import RegistryConfig
+    from src.app import RegistryApp
 
-    # Re-import the app module so RegistryConfig.from_env() picks up our env
-    import importlib
-    import src.app as app_mod
-    importlib.reload(app_mod)
-    return app_mod.app
+    cfg = RegistryConfig(
+        environment="dev",
+        internal_api_key="test-key",
+        sqlite_path=tmp_path / "r.db",
+        seed_path=None,
+    )
+    registry = RegistryApp(config=cfg)
+    return registry.create_app()
 
 
 def test_full_register_heartbeat_lookup_deregister(app):
     with TestClient(app) as client:
-        headers = {"Authorization": "Bearer test-key"}
+        headers = {"Authorization": "Bearer test-key", "X-Environment": "dev"}
 
         # 1. List is empty (no seed)
         r = client.get("/api/services")
